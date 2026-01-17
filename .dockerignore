@@ -19,7 +19,6 @@ LICENSE
 
 # Build artifacts
 /bin/
-/dist/
 
 # OS files
 .DS_Store
