@@ -1,39 +1,15 @@
-# Build stage
-FROM golang:1.21-alpine AS builder
+FROM gcr.io/distroless/base-debian12
 
 WORKDIR /app
 
-# Install build dependencies
-RUN apk add --no-cache git
+# Copy prebuilt ARM64 binary from CI
+COPY dist/stocks-service /app/stocks-service
 
-# Copy go mod files
-COPY go.mod go.sum* ./
+# Copy migrations if needed at runtime
+COPY db/migrations /app/db/migrations
 
-# Download dependencies
-RUN go mod download
+EXPOSE 8081
 
-# Copy source code
-COPY . .
+USER nonroot:nonroot
 
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o stock-service ./cmd/server
-
-# Runtime stage
-FROM alpine:3.19
-
-WORKDIR /app
-
-# Install runtime dependencies
-RUN apk --no-cache add ca-certificates tzdata
-
-# Copy binary from builder
-COPY --from=builder /app/stock-service .
-
-# Copy migrations
-COPY --from=builder /app/db/migrations ./db/migrations
-
-# Expose port
-EXPOSE 8080
-
-# Run the application
-CMD ["./stock-service"]
+ENTRYPOINT ["/app/stocks-service"]
