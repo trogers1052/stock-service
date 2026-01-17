@@ -13,6 +13,7 @@ import (
 	"github.com/trogers1052/stock-alert-system/internal/config"
 	"github.com/trogers1052/stock-alert-system/internal/database"
 	"github.com/trogers1052/stock-alert-system/internal/kafka"
+	"github.com/trogers1052/stock-alert-system/internal/redis"
 )
 
 func main() {
@@ -25,15 +26,25 @@ func main() {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 	defer db.Close()
-	log.Println("Connected to database")
+	log.Println("Connected to PostgreSQL database")
+
+	// Connect to Redis
+	redisClient, err := redis.New(cfg.Redis)
+	if err != nil {
+		log.Printf("Warning: Failed to connect to Redis: %v (continuing without cache)", err)
+		redisClient = nil
+	} else {
+		defer redisClient.Close()
+		log.Println("Connected to Redis cache")
+	}
 
 	// Create Kafka producer
 	producer := kafka.NewProducer(cfg.Kafka.Brokers, cfg.Kafka.Topic)
 	defer producer.Close()
-	log.Println("Kafka producer initialized")
+	log.Printf("Kafka producer initialized (brokers: %v)", cfg.Kafka.Brokers)
 
 	// Set up HTTP handler and routes
-	handler := api.NewHandler(db, producer)
+	handler := api.NewHandler(db, producer, redisClient)
 	router := api.SetupRoutes(handler)
 
 	// Create HTTP server

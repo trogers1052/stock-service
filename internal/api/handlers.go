@@ -1,26 +1,31 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/trogers1052/stock-alert-system/internal/database"
 	"github.com/trogers1052/stock-alert-system/internal/kafka"
 	"github.com/trogers1052/stock-alert-system/internal/models"
+	"github.com/trogers1052/stock-alert-system/internal/redis"
 )
 
 // Handler holds dependencies for HTTP handlers
 type Handler struct {
 	db       *database.DB
 	producer *kafka.Producer
+	redis    *redis.Client
 }
 
 // NewHandler creates a new Handler
-func NewHandler(db *database.DB, producer *kafka.Producer) *Handler {
+func NewHandler(db *database.DB, producer *kafka.Producer, redisClient *redis.Client) *Handler {
 	return &Handler{
 		db:       db,
 		producer: producer,
+		redis:    redisClient,
 	}
 }
 
@@ -114,7 +119,53 @@ func (h *Handler) RemoveStock(w http.ResponseWriter, r *http.Request) {
 
 // HealthCheck handles GET /health
 func (h *Handler) HealthCheck(w http.ResponseWriter, r *http.Request) {
-	respondJSON(w, http.StatusOK, map[string]string{"status": "healthy"})
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	health := map[string]interface{}{
+		"status":    "healthy",
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+		"services":  map[string]string{},
+	}
+	services := health["services"].(map[string]string)
+	allHealthy := true
+
+	// Check database
+	if h.db != nil {
+		if err := h.db.Ping(); err != nil {
+			services["postgres"] = "unhealthy: " + err.Error()
+			allHealthy = false
+		} else {
+			services["postgres"] = "healthy"
+		}
+	} else {
+		services["postgres"] = "not configured"
+		allHealthy = false
+	}
+
+	// Check Redis
+	if h.redis != nil {
+		if err := h.redis.Ping(ctx); err != nil {
+			services["redis"] = "unhealthy: " + err.Error()
+		} else {
+			services["redis"] = "healthy"
+		}
+	} else {
+		services["redis"] = "not configured"
+	}
+
+	// Check Kafka producer
+	if h.producer != nil {
+		services["kafka"] = "configured"
+	} else {
+		services["kafka"] = "not configured"
+	}
+
+	if !allHealthy {
+		health["status"] = "degraded"
+	}
+
+	respondJSON(w, http.StatusOK, health)
 }
 
 func respondJSON(w http.ResponseWriter, status int, data interface{}) {

@@ -35,3 +35,8 @@ func (db *DB) Close() error {
 func (db *DB) Conn() *sql.DB {
 	return db.conn
 }
+
+// Ping checks if the database is reachable
+func (db *DB) Ping() error {
+	return db.conn.Ping()
+}
