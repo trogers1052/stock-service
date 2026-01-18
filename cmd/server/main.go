@@ -104,7 +104,7 @@ func runMigrations(databaseUrl string) error {
 
 	// Apply all available migrations up to the latest version
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		log.Fatalf("failed to apply migrations: %w", err)
+		log.Fatalf("failed to apply migrations: %v", err)
 	}
 
 	// If ErrNoChange is returned, it simply means the database was already current
