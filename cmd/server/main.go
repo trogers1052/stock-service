@@ -30,7 +30,7 @@ func main() {
 	}
 
 	// Run migrations
-	if err := runMigrations(db); err != nil {
+	if err := runMigrations(cfg.Database.ConnectionString()); err != nil {
 		log.Fatalf("Failed to run database migrations: %v", err)
 	}
 
