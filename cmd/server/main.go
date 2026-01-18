@@ -9,6 +9,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/trogers1052/stock-alert-system/internal/api"
 	"github.com/trogers1052/stock-alert-system/internal/config"
 	"github.com/trogers1052/stock-alert-system/internal/database"
@@ -25,6 +28,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
+
+	// Run migrations
+	if err := runMigrations(db); err != nil {
+		log.Fatalf("Failed to run database migrations: %v", err)
+	}
+
 	defer db.Close()
 	log.Println("Connected to PostgreSQL database")
 
@@ -81,4 +90,27 @@ func main() {
 	}
 
 	log.Println("Server stopped")
+}
+
+func runMigrations(databaseUrl string) error {
+	// The "file://" prefix tells the migrate library to use the file driver
+	// Specify the path to your migrations directory
+	m, err := migrate.New(
+		"file://./db/migrations", // Path to your migrations directory
+		databaseUrl)
+	if err != nil {
+		log.Fatalf("could not create migrate instance: %v", err)
+	}
+
+	// Apply all available migrations up to the latest version
+	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+		log.Fatalf("failed to apply migrations: %w", err)
+	}
+
+	// If ErrNoChange is returned, it simply means the database was already current
+	if err == migrate.ErrNoChange {
+		log.Println("No migrations to apply; database is up to date.")
+	}
+
+	return nil
 }
