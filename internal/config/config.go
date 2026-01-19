@@ -35,6 +35,7 @@ type KafkaConfig struct {
 	Topic          string
 	TradesTopic    string
 	PositionsTopic string
+	WatchlistTopic string
 	ConsumerGroup  string
 }
 
@@ -66,6 +67,7 @@ func Load() *Config {
 			Topic:          getEnv("KAFKA_TOPIC", "stock-events"),
 			TradesTopic:    getEnv("KAFKA_TRADES_TOPIC", "trading.orders"),
 			PositionsTopic: getEnv("KAFKA_POSITIONS_TOPIC", "trading.positions"),
+			WatchlistTopic: getEnv("KAFKA_WATCHLIST_TOPIC", "trading.watchlist"),
 			ConsumerGroup:  getEnv("KAFKA_CONSUMER_GROUP", "stock-service"),
 		},
 		Redis: RedisConfig{

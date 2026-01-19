@@ -185,6 +185,35 @@ func (db *DB) DeleteStockByID(id string) error {
 	return nil
 }
 
+// UpsertStockBasic inserts or updates a stock with just symbol and name
+// This is used when a new stock is added to the watchlist
+func (db *DB) UpsertStockBasic(symbol, name string) error {
+	query := `
+		INSERT INTO stocks (symbol, name, last_updated)
+		VALUES ($1, $2, NOW())
+		ON CONFLICT (symbol) DO UPDATE SET
+			name = CASE WHEN stocks.name = '' OR stocks.name = stocks.symbol THEN EXCLUDED.name ELSE stocks.name END,
+			last_updated = NOW()
+	`
+
+	_, err := db.conn.Exec(query, symbol, name)
+	if err != nil {
+		return fmt.Errorf("failed to upsert stock %s: %w", symbol, err)
+	}
+	return nil
+}
+
+// StockExists checks if a stock exists in the database
+func (db *DB) StockExists(symbol string) (bool, error) {
+	query := `SELECT EXISTS(SELECT 1 FROM stocks WHERE symbol = $1)`
+	var exists bool
+	err := db.conn.QueryRow(query, symbol).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("failed to check stock existence: %w", err)
+	}
+	return exists, nil
+}
+
 // GetStocksBySector retrieves all stocks in a specific sector
 func (db *DB) GetStocksBySector(sector string) ([]*models.Stock, error) {
 	query := `
