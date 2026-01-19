@@ -73,6 +73,21 @@ func main() {
 		}
 	}()
 
+	// Create and start Kafka consumer for position snapshots
+	positionsConsumer := kafka.NewPositionsConsumer(
+		cfg.Kafka.Brokers,
+		cfg.Kafka.PositionsTopic,
+		cfg.Kafka.ConsumerGroup,
+		db,
+	)
+	go func() {
+		log.Printf("Starting Kafka positions consumer for topic: %s (group: %s-positions)",
+			cfg.Kafka.PositionsTopic, cfg.Kafka.ConsumerGroup)
+		if err := positionsConsumer.Start(ctx); err != nil {
+			log.Printf("Kafka positions consumer error: %v", err)
+		}
+	}()
+
 	// Set up HTTP handler and routes
 	handler := api.NewHandler(db, producer, redisClient)
 	router := api.SetupRoutes(handler)
@@ -113,9 +128,12 @@ func main() {
 		log.Fatalf("Server forced to shutdown: %v", err)
 	}
 
-	// Close Kafka consumer
+	// Close Kafka consumers
 	if err := consumer.Close(); err != nil {
 		log.Printf("Error closing Kafka consumer: %v", err)
+	}
+	if err := positionsConsumer.Close(); err != nil {
+		log.Printf("Error closing Kafka positions consumer: %v", err)
 	}
 
 	log.Println("Server stopped")

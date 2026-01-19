@@ -24,3 +24,30 @@ type Position struct {
 	CreatedAt       time.Time       `json:"created_at"`
 	UpdatedAt       time.Time       `json:"updated_at"`
 }
+
+// PositionsEvent represents a Kafka message with position snapshot from Robinhood
+type PositionsEvent struct {
+	EventType string             `json:"event_type"`
+	Source    string             `json:"source"`
+	Timestamp string             `json:"timestamp"`
+	Data      PositionsEventData `json:"data"`
+}
+
+// PositionsEventData contains the positions and account balance
+type PositionsEventData struct {
+	Positions   []PositionData `json:"positions"`
+	BuyingPower string         `json:"buying_power"`
+	Cash        string         `json:"cash"`
+	TotalEquity string         `json:"total_equity"`
+}
+
+// PositionData represents a single position from Robinhood
+type PositionData struct {
+	Symbol          string `json:"symbol"`
+	Quantity        string `json:"quantity"`
+	AverageBuyPrice string `json:"average_buy_price"`
+	Equity          string `json:"equity"`
+	PercentChange   string `json:"percent_change"`
+	EquityChange    string `json:"equity_change"`
+	UpdatedAt       string `json:"updated_at"`
+}
