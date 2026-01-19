@@ -261,3 +261,56 @@ func (db *DB) DeletePositionBySymbol(symbol string) error {
 	}
 	return nil
 }
+
+// ReplaceAllPositions atomically replaces all positions with a new set
+// This is used when receiving a positions snapshot from Robinhood
+func (db *DB) ReplaceAllPositions(positions []*models.Position) error {
+	tx, err := db.conn.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Delete all existing positions
+	_, err = tx.Exec(`DELETE FROM positions`)
+	if err != nil {
+		return fmt.Errorf("failed to delete existing positions: %w", err)
+	}
+
+	// Insert new positions
+	insertQuery := `
+		INSERT INTO positions (
+			symbol, quantity, entry_price, entry_date, current_price,
+			unrealized_pnl_pct, days_held, created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		RETURNING id
+	`
+
+	now := time.Now()
+	for _, p := range positions {
+		err := tx.QueryRow(insertQuery,
+			p.Symbol, p.Quantity, p.EntryPrice, p.EntryDate, p.CurrentPrice,
+			p.UnrealizedPnlPct, p.DaysHeld, now, now,
+		).Scan(&p.ID)
+		if err != nil {
+			return fmt.Errorf("failed to insert position %s: %w", p.Symbol, err)
+		}
+		p.CreatedAt = now
+		p.UpdatedAt = now
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
+}
+
+// DeleteAllPositions removes all positions from the database
+func (db *DB) DeleteAllPositions() error {
+	_, err := db.conn.Exec(`DELETE FROM positions`)
+	if err != nil {
+		return fmt.Errorf("failed to delete all positions: %w", err)
+	}
+	return nil
+}
