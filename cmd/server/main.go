@@ -88,6 +88,21 @@ func main() {
 		}
 	}()
 
+	// Create and start Kafka consumer for watchlist events
+	watchlistConsumer := kafka.NewWatchlistConsumer(
+		cfg.Kafka.Brokers,
+		cfg.Kafka.WatchlistTopic,
+		cfg.Kafka.ConsumerGroup,
+		db,
+	)
+	go func() {
+		log.Printf("Starting Kafka watchlist consumer for topic: %s (group: %s-watchlist)",
+			cfg.Kafka.WatchlistTopic, cfg.Kafka.ConsumerGroup)
+		if err := watchlistConsumer.Start(ctx); err != nil {
+			log.Printf("Kafka watchlist consumer error: %v", err)
+		}
+	}()
+
 	// Set up HTTP handler and routes
 	handler := api.NewHandler(db, producer, redisClient)
 	router := api.SetupRoutes(handler)
@@ -134,6 +149,9 @@ func main() {
 	}
 	if err := positionsConsumer.Close(); err != nil {
 		log.Printf("Error closing Kafka positions consumer: %v", err)
+	}
+	if err := watchlistConsumer.Close(); err != nil {
+		log.Printf("Error closing Kafka watchlist consumer: %v", err)
 	}
 
 	log.Println("Server stopped")
