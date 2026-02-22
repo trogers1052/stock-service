@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -166,6 +167,88 @@ func (h *Handler) HealthCheck(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, health)
+}
+
+// CreateFeedback handles POST /api/v1/feedback
+func (h *Handler) CreateFeedback(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Symbol     string  `json:"symbol"`
+		Signal     string  `json:"signal"`
+		Action     string  `json:"action"`
+		Confidence float64 `json:"confidence"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Symbol == "" || req.Signal == "" || req.Action == "" {
+		http.Error(w, "symbol, signal, and action are required", http.StatusBadRequest)
+		return
+	}
+
+	fb := &models.SignalFeedback{
+		Symbol:            req.Symbol,
+		Signal:            req.Signal,
+		Action:            req.Action,
+		Confidence:        req.Confidence,
+		FeedbackTimestamp: time.Now(),
+	}
+
+	if err := h.db.CreateSignalFeedback(fb); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	respondJSON(w, http.StatusCreated, fb)
+}
+
+// GetFeedback handles GET /api/v1/feedback
+func (h *Handler) GetFeedback(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+
+	var sinceDate *time.Time
+	if sinceDays := query.Get("since_days"); sinceDays != "" {
+		days, err := strconv.Atoi(sinceDays)
+		if err != nil || days < 0 {
+			http.Error(w, "invalid since_days parameter", http.StatusBadRequest)
+			return
+		}
+		t := time.Now().AddDate(0, 0, -days)
+		sinceDate = &t
+	}
+
+	symbol := query.Get("symbol")
+
+	limit := 1000
+	if limitStr := query.Get("limit"); limitStr != "" {
+		l, err := strconv.Atoi(limitStr)
+		if err != nil || l < 0 {
+			http.Error(w, "invalid limit parameter", http.StatusBadRequest)
+			return
+		}
+		limit = l
+	}
+
+	entries, err := h.db.GetSignalFeedback(limit, sinceDate, symbol)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	respondJSON(w, http.StatusOK, entries)
+}
+
+// GetFeedbackSummary handles GET /api/v1/feedback/summary
+func (h *Handler) GetFeedbackSummary(w http.ResponseWriter, r *http.Request) {
+	summary, err := h.db.GetFeedbackSummary()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	respondJSON(w, http.StatusOK, summary)
 }
 
 func respondJSON(w http.ResponseWriter, status int, data interface{}) {
