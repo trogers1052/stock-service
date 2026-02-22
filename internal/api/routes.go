@@ -18,5 +18,10 @@ func SetupRoutes(handler *Handler) *mux.Router {
 	api.HandleFunc("/stocks/{symbol}", handler.GetStock).Methods("GET")
 	api.HandleFunc("/stocks/{symbol}", handler.RemoveStock).Methods("DELETE")
 
+	// Signal feedback routes
+	api.HandleFunc("/feedback", handler.CreateFeedback).Methods("POST")
+	api.HandleFunc("/feedback", handler.GetFeedback).Methods("GET")
+	api.HandleFunc("/feedback/summary", handler.GetFeedbackSummary).Methods("GET")
+
 	return r
 }
