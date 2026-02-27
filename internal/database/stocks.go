@@ -203,6 +203,25 @@ func (db *DB) UpsertStockBasic(symbol, name string) error {
 	return nil
 }
 
+// UpsertStockWithSector inserts or updates a stock with symbol, name, sector, and industry
+func (db *DB) UpsertStockWithSector(symbol, name, sector, industry string) error {
+	query := `
+		INSERT INTO stocks (symbol, name, sector, industry, last_updated)
+		VALUES ($1, $2, $3, $4, NOW())
+		ON CONFLICT (symbol) DO UPDATE SET
+			name = CASE WHEN stocks.name = '' OR stocks.name = stocks.symbol THEN EXCLUDED.name ELSE stocks.name END,
+			sector = COALESCE(NULLIF(EXCLUDED.sector, ''), stocks.sector),
+			industry = COALESCE(NULLIF(EXCLUDED.industry, ''), stocks.industry),
+			last_updated = NOW()
+	`
+
+	_, err := db.conn.Exec(query, symbol, name, sector, industry)
+	if err != nil {
+		return fmt.Errorf("failed to upsert stock %s with sector: %w", symbol, err)
+	}
+	return nil
+}
+
 // StockExists checks if a stock exists in the database
 func (db *DB) StockExists(symbol string) (bool, error) {
 	query := `SELECT EXISTS(SELECT 1 FROM stocks WHERE symbol = $1)`
@@ -212,6 +231,33 @@ func (db *DB) StockExists(symbol string) (bool, error) {
 		return false, fmt.Errorf("failed to check stock existence: %w", err)
 	}
 	return exists, nil
+}
+
+// GetSectorMap returns a map of symbol -> sector for all stocks with a non-null sector
+func (db *DB) GetSectorMap() (map[string]string, error) {
+	query := `
+		SELECT symbol, sector
+		FROM stocks
+		WHERE sector IS NOT NULL AND sector != ''
+		ORDER BY symbol
+	`
+
+	rows, err := db.conn.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get sector map: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[string]string)
+	for rows.Next() {
+		var symbol, sector string
+		if err := rows.Scan(&symbol, &sector); err != nil {
+			return nil, fmt.Errorf("failed to scan sector row: %w", err)
+		}
+		result[symbol] = sector
+	}
+
+	return result, nil
 }
 
 // GetStocksBySector retrieves all stocks in a specific sector
