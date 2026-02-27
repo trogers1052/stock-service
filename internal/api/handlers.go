@@ -118,6 +118,17 @@ func (h *Handler) RemoveStock(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// GetSectors handles GET /api/v1/stocks/sectors
+func (h *Handler) GetSectors(w http.ResponseWriter, r *http.Request) {
+	sectorMap, err := h.db.GetSectorMap()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	respondJSON(w, http.StatusOK, sectorMap)
+}
+
 // HealthCheck handles GET /health
 func (h *Handler) HealthCheck(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)

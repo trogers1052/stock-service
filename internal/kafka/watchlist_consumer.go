@@ -14,6 +14,7 @@ import (
 // StockRepository defines the interface for stock database operations
 type StockRepository interface {
 	UpsertStockBasic(symbol, name string) error
+	UpsertStockWithSector(symbol, name, sector, industry string) error
 	StockExists(symbol string) (bool, error)
 }
 
@@ -35,8 +36,10 @@ type WatchlistEventData struct {
 	Stocks         []WatchlistStock `json:"stocks,omitempty"`
 
 	// For WATCHLIST_SYMBOL_ADDED/REMOVED events
-	Symbol string `json:"symbol,omitempty"`
-	Name   string `json:"name,omitempty"`
+	Symbol   string `json:"symbol,omitempty"`
+	Name     string `json:"name,omitempty"`
+	Sector   string `json:"sector,omitempty"`
+	Industry string `json:"industry,omitempty"`
 }
 
 // WatchlistStock represents stock details in the event
@@ -45,6 +48,8 @@ type WatchlistStock struct {
 	Name          string `json:"name"`
 	InstrumentURL string `json:"instrument_url"`
 	AddedAt       string `json:"added_at"`
+	Sector        string `json:"sector,omitempty"`
+	Industry      string `json:"industry,omitempty"`
 }
 
 // WatchlistConsumer handles consuming watchlist events from Kafka
@@ -142,20 +147,31 @@ func (c *WatchlistConsumer) handleWatchlistUpdated(event WatchlistEvent) error {
 	for _, symbol := range event.Data.AddedSymbols {
 		symbol = strings.ToUpper(symbol)
 		name := symbol
+		sector := ""
+		industry := ""
 
-		// Find name from stocks list
+		// Find name and sector from stocks list
 		for _, stock := range event.Data.Stocks {
 			if strings.ToUpper(stock.Symbol) == symbol {
 				name = stock.Name
+				sector = stock.Sector
+				industry = stock.Industry
 				break
 			}
 		}
 
-		if err := c.repo.UpsertStockBasic(symbol, name); err != nil {
-			log.Printf("Error upserting stock %s: %v", symbol, err)
-			continue
+		if sector != "" || industry != "" {
+			if err := c.repo.UpsertStockWithSector(symbol, name, sector, industry); err != nil {
+				log.Printf("Error upserting stock %s: %v", symbol, err)
+				continue
+			}
+		} else {
+			if err := c.repo.UpsertStockBasic(symbol, name); err != nil {
+				log.Printf("Error upserting stock %s: %v", symbol, err)
+				continue
+			}
 		}
-		log.Printf("Added/updated stock: %s (%s)", symbol, name)
+		log.Printf("Added/updated stock: %s (%s) sector=%s", symbol, name, sector)
 	}
 
 	return nil
@@ -169,11 +185,20 @@ func (c *WatchlistConsumer) handleSymbolAdded(event WatchlistEvent) error {
 		name = symbol
 	}
 
-	if err := c.repo.UpsertStockBasic(symbol, name); err != nil {
-		return fmt.Errorf("failed to upsert stock %s: %w", symbol, err)
+	sector := event.Data.Sector
+	industry := event.Data.Industry
+
+	if sector != "" || industry != "" {
+		if err := c.repo.UpsertStockWithSector(symbol, name, sector, industry); err != nil {
+			return fmt.Errorf("failed to upsert stock %s: %w", symbol, err)
+		}
+	} else {
+		if err := c.repo.UpsertStockBasic(symbol, name); err != nil {
+			return fmt.Errorf("failed to upsert stock %s: %w", symbol, err)
+		}
 	}
 
-	log.Printf("Added/updated stock from watchlist: %s (%s)", symbol, name)
+	log.Printf("Added/updated stock from watchlist: %s (%s) sector=%s", symbol, name, sector)
 	return nil
 }
 

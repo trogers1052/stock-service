@@ -15,6 +15,7 @@ func SetupRoutes(handler *Handler) *mux.Router {
 	api := r.PathPrefix("/api/v1").Subrouter()
 	api.HandleFunc("/stocks", handler.GetAllStocks).Methods("GET")
 	api.HandleFunc("/stocks", handler.AddStock).Methods("POST")
+	api.HandleFunc("/stocks/sectors", handler.GetSectors).Methods("GET")
 	api.HandleFunc("/stocks/{symbol}", handler.GetStock).Methods("GET")
 	api.HandleFunc("/stocks/{symbol}", handler.RemoveStock).Methods("DELETE")
 
