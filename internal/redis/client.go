@@ -124,6 +124,44 @@ func (c *Client) Subscribe(ctx context.Context, channels ...string) *redis.PubSu
 	return c.rdb.Subscribe(ctx, channels...)
 }
 
+// Tier data caching
+
+// TierData represents cached tier ranking data for the decision-engine.
+type TierData struct {
+	Symbol                 string   `json:"symbol"`
+	Tier                   string   `json:"tier"`
+	CompositeScore         float64  `json:"composite_score"`
+	ConfidenceMultiplier   float64  `json:"confidence_multiplier"`
+	PositionSizeMultiplier float64  `json:"position_size_multiplier"`
+	Blacklisted            bool     `json:"blacklisted"`
+	AllowedRegimes         []string `json:"allowed_regimes,omitempty"`
+}
+
+// SetTierData caches tier data with TTL
+func (c *Client) SetTierData(ctx context.Context, data *TierData, ttl time.Duration) error {
+	key := fmt.Sprintf("stock:%s:tier", data.Symbol)
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("failed to marshal tier data: %w", err)
+	}
+	return c.rdb.Set(ctx, key, jsonData, ttl).Err()
+}
+
+// GetTierData retrieves cached tier data
+func (c *Client) GetTierData(ctx context.Context, symbol string) (*TierData, error) {
+	key := fmt.Sprintf("stock:%s:tier", symbol)
+	jsonData, err := c.rdb.Get(ctx, key).Bytes()
+	if err != nil {
+		return nil, err
+	}
+
+	var data TierData
+	if err := json.Unmarshal(jsonData, &data); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal tier data: %w", err)
+	}
+	return &data, nil
+}
+
 // Generic operations
 
 // Set stores a value with optional TTL
