@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -212,6 +213,7 @@ func (h *Handler) CreateFeedback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Printf("Feedback stored: %s %s -> %s (confidence=%.2f)", fb.Symbol, fb.Signal, fb.Action, fb.Confidence)
 	respondJSON(w, http.StatusCreated, fb)
 }
 
@@ -319,6 +321,8 @@ func (h *Handler) UpsertTier(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Printf("Tier upserted: %s -> %s (score=%.1f)", tier.Symbol, tier.Tier, tier.CompositeScore)
+
 	// Cache in Redis
 	if h.redis != nil {
 		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
@@ -382,6 +386,8 @@ func (h *Handler) BulkUpsertTiers(w http.ResponseWriter, r *http.Request) {
 
 		succeeded++
 	}
+
+	log.Printf("Bulk tier upsert: %d/%d succeeded", succeeded, len(tiers))
 
 	result := map[string]interface{}{
 		"succeeded": succeeded,

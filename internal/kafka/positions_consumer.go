@@ -78,9 +78,6 @@ func (c *PositionsConsumer) Start(ctx context.Context) error {
 
 // processMessage handles a single Kafka message
 func (c *PositionsConsumer) processMessage(msg kafka.Message) error {
-	log.Printf("Received positions message from partition %d offset %d",
-		msg.Partition, msg.Offset)
-
 	var event models.PositionsEvent
 	if err := json.Unmarshal(msg.Value, &event); err != nil {
 		return fmt.Errorf("failed to unmarshal positions event: %w", err)
@@ -113,13 +110,7 @@ func (c *PositionsConsumer) processMessage(msg kafka.Message) error {
 		return fmt.Errorf("failed to replace positions: %w", err)
 	}
 
-	log.Printf("Successfully updated %d positions from snapshot", len(positions))
-
-	// Log each position
-	for _, p := range positions {
-		log.Printf("  %s: %s shares @ $%s (current: $%s, P&L: %s%%)",
-			p.Symbol, p.Quantity, p.EntryPrice, p.CurrentPrice, p.UnrealizedPnlPct)
-	}
+	log.Printf("Positions snapshot applied: %d positions updated", len(positions))
 
 	return nil
 }

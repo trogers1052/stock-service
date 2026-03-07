@@ -106,9 +106,6 @@ func (c *WatchlistConsumer) Start(ctx context.Context) error {
 
 // processMessage handles a single Kafka message
 func (c *WatchlistConsumer) processMessage(msg kafka.Message) error {
-	log.Printf("Received watchlist message from partition %d offset %d: key=%s",
-		msg.Partition, msg.Offset, string(msg.Key))
-
 	var event WatchlistEvent
 	if err := json.Unmarshal(msg.Value, &event); err != nil {
 		return fmt.Errorf("failed to unmarshal watchlist event: %w", err)

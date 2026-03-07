@@ -76,9 +76,6 @@ func (c *Consumer) Start(ctx context.Context) error {
 
 // processMessage handles a single Kafka message
 func (c *Consumer) processMessage(msg kafka.Message) error {
-	log.Printf("Received message from partition %d offset %d: key=%s",
-		msg.Partition, msg.Offset, string(msg.Key))
-
 	var event models.TradeEvent
 	if err := json.Unmarshal(msg.Value, &event); err != nil {
 		return fmt.Errorf("failed to unmarshal trade event: %w", err)
@@ -111,7 +108,7 @@ func (c *Consumer) processMessage(msg kafka.Message) error {
 		return fmt.Errorf("failed to save raw trade: %w", err)
 	}
 
-	log.Printf("Saved raw trade: %s %s %s @ %s (order_id: %s)",
+	log.Printf("Raw trade stored: %s %s %s @ %s (order=%s)",
 		rawTrade.Side, rawTrade.Quantity, rawTrade.Symbol, rawTrade.Price, rawTrade.OrderID)
 
 	return nil
