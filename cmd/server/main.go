@@ -20,10 +20,12 @@ import (
 )
 
 func main() {
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+
 	// Load configuration
 	cfg := config.Load()
 
-	log.Println("Go Bears!!!!")
+	log.Println("Starting stock-service...")
 
 	// Connect to database
 	db, err := database.New(cfg.Database.ConnectionString())
@@ -117,6 +119,13 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
+	log.Printf("========================================")
+	log.Printf("Stock-Service ready")
+	log.Printf("API: http://%s", addr)
+	log.Printf("Kafka consumers: trades=%s, positions=%s, watchlist=%s",
+		cfg.Kafka.TradesTopic, cfg.Kafka.PositionsTopic, cfg.Kafka.WatchlistTopic)
+	log.Printf("========================================")
+
 	// Start server in goroutine
 	go func() {
 		log.Printf("Starting server on %s", addr)
@@ -130,7 +139,7 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Println("Shutting down server...")
+	log.Println("Shutting down stock-service...")
 
 	// Cancel context to stop Kafka consumer
 	cancel()
@@ -154,7 +163,7 @@ func main() {
 		log.Printf("Error closing Kafka watchlist consumer: %v", err)
 	}
 
-	log.Println("Server stopped")
+	log.Println("Stock-service stopped")
 }
 
 func runMigrations(databaseUrl string) error {
