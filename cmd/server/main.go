@@ -27,6 +27,9 @@ func main() {
 
 	log.Println("Starting stock-service...")
 
+	// Metrics endpoint — Prometheus scrape target
+	startMetricsServer()
+
 	// Connect to database
 	db, err := database.New(cfg.Database.ConnectionString())
 	if err != nil {
