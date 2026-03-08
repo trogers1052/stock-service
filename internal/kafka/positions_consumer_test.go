@@ -63,13 +63,17 @@ func newMockPositionsReader(topic string, buffer int) *mockPositionsReader {
 	}
 }
 
-func (r *mockPositionsReader) ReadMessage(ctx context.Context) (kafka.Message, error) {
+func (r *mockPositionsReader) FetchMessage(ctx context.Context) (kafka.Message, error) {
 	select {
 	case msg := <-r.msgs:
 		return msg, nil
 	case <-ctx.Done():
 		return kafka.Message{}, ctx.Err()
 	}
+}
+
+func (r *mockPositionsReader) CommitMessages(_ context.Context, _ ...kafka.Message) error {
+	return nil
 }
 
 func (r *mockPositionsReader) Close() error {

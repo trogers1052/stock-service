@@ -1,9 +1,8 @@
 # Trading Platform – Master Checklist
 
-**Last Updated:** January 18, 2026
+**Last Updated:** March 6, 2026
 **Project Owner:** Thomas Rogers
-
-This checklist is the single source of truth to keep the project organized, grounded, and moving forward without losing architectural discipline.
+**Status:** This checklist has been largely superseded by `CLAUDE.md` (build blueprint) and `CODEBASE_ASSESSMENT.md` (current state). Kept for historical reference.
 
 Status markers:
 - ⬜ Not started
@@ -12,30 +11,32 @@ Status markers:
 
 ---
 
-## 🧱 Current Baseline (Locked In)
-
-These are assumptions going forward. If one of these changes, the checklist must be updated.
+## Current Baseline (Locked In)
 
 ### Infrastructure
-- ✅ Raspberry Pi 5 (16GB RAM) provisioned and stable
+- ✅ Raspberry Pi 5 (8GB RAM) provisioned and stable
 - ✅ Docker installed and working
 - ✅ Docker Compose in use
 - ✅ PostgreSQL 17 container running (`trading-db`)
 - ✅ Redis 8 container running (`trading-realtime-data-shared`)
 - ✅ Redpanda (Kafka-compatible) container running (`trading-redpanda`)
 - ✅ Redpanda Console accessible (port 8080)
+- ✅ TimescaleDB for OHLCV time-series data
+- ✅ GitHub Actions CI/CD building ARM64 Docker images
 
 ### Stock-Service (Go)
 - ✅ Service exists and connects to PostgreSQL
-- ✅ Database migrations written and applied (8 migrations)
+- ✅ Database migrations written and applied (13 migrations)
 - ✅ Models and repositories implemented
 - ✅ Unit tests added to repositories
-- ✅ REST API endpoints working (health, stocks CRUD)
-- ✅ Kafka consumer for `trading.orders` topic
+- ✅ REST API endpoints working (health, stocks CRUD, feedback, tiers)
+- ✅ Kafka consumer for `trading.orders` and `trading.positions` topics
 - ✅ Raw trades stored to `raw_trades` table
 - ✅ Position aggregation logic (BUY creates/updates, SELL closes)
 - ✅ Trade history archival on position close
 - ✅ Docker image built for ARM64 and published to GHCR
+- ✅ Signal feedback persistence (Telegram → REST API → PostgreSQL)
+- ✅ Tier ranking storage (`backtest_tiers` table + Redis cache + REST API)
 
 ### Robinhood-Sync (Python)
 - ✅ Service created and running on Raspberry Pi
@@ -46,302 +47,99 @@ These are assumptions going forward. If one of these changes, the checklist must
 - ✅ Market hours scheduling (4am-8pm ET, Mon-Fri)
 - ✅ Continuous and single-run modes supported
 - ✅ Historical sync capability (`--days N`)
+- ✅ Earnings calendar sync → Redis
+- ✅ Position and watchlist sync → Kafka
 
 ---
 
-## 🧠 Architectural Rules (Non-Negotiable)
-
-Use this as a guardrail when making decisions.
+## Architectural Rules (Non-Negotiable)
 
 - ✅ Services communicate via **Kafka (Redpanda)**, not direct DB calls
 - ✅ PostgreSQL is the **source of truth**, not Redis
-- ✅ Redis is for **hot / ephemeral data only** (deduplication, caching)
+- ✅ Redis is for **hot / ephemeral data only** (deduplication, caching, tier cache, market context)
 - ✅ Each service has **one primary responsibility**
 - ✅ No service reaches into another service's database tables
 - ✅ Events are immutable (no edits, only new facts)
 
 ---
 
-## 🧪 Environment & Observability
+## Kafka Topics ✅ ALL ACTIVE
 
-### Local Infrastructure
-- ✅ Docker Compose file documents all running services
-- ✅ Redpanda Console / UI accessible locally (port 8080)
-- 🟡 Logs for each service are easy to find and readable
-- ✅ `.env` files exist and are gitignored
-
-### Sanity Checks
-- ✅ Can connect to PostgreSQL from host (port 5432)
-- ✅ Can connect to Redis from host (port 6379)
-- ✅ Can produce and consume events in Redpanda (verified with robinhood-sync → stock-service)
+- ✅ `stock.quotes` (price updates from Alpaca IEX)
+- ✅ `stock.indicators` (calculated indicators)
+- ✅ `market.context` (regime, VIX, HY spreads, sector strength)
+- ✅ `trading.decisions` (decision-engine signals with trade plan + checklist + tier data)
+- ✅ `trading.rankings` (daily symbol rankings)
+- ✅ `trading.orders` (trade events from Robinhood)
+- ✅ `trading.positions` (position sync from Robinhood)
+- ✅ `trading.watchlist` (watchlist sync from Robinhood)
 
 ---
 
-## 📦 Event Foundation (Critical Path)
+## Market Data Ingestion ✅ COMPLETE
 
-### Kafka / Redpanda Setup
-- ✅ Redpanda running in KRaft mode (no Zookeeper)
-- ✅ Topics created:
-  - ✅ `trading.orders` (trade events from Robinhood)
-  - ✅ `stock-events` (stock CRUD events)
-  - ⬜ `stock.quotes.realtime` (price updates)
-  - ⬜ `stock.indicators` (calculated indicators)
-  - ⬜ `trading.alerts` (fired alerts)
-- 🟡 Topic naming conventions documented
-- 🟡 Event schemas defined (versioned)
+- ✅ market-data-ingestion service (Go) — Alpaca free IEX real-time feed
+- ✅ Publishes to `stock.quotes`
+- ✅ TimescaleDB persistence (OHLCV 1-min and daily)
+- ✅ Watchlist sync from Robinhood
+- ✅ 181 symbols monitored
 
-### Event Design
-- ✅ `TradeEvent` schema defined and working:
-  ```json
-  {
-    "event_type": "TRADE_DETECTED",
-    "source": "robinhood",
-    "timestamp": "ISO8601",
-    "data": {
-      "order_id", "symbol", "side", "quantity",
-      "average_price", "total_notional", "fees",
-      "state", "executed_at", "created_at"
-    }
-  }
-  ```
-- ⬜ `QuoteEvent` schema defined
-- ⬜ `IndicatorEvent` schema defined
-- ⬜ All events include: symbol, timestamp, source, schema_version
+## Analytics Service ✅ COMPLETE
 
----
+- ✅ RSI, MACD, SMA (20/50/200), Bollinger Bands, ATR
+- ✅ Stochastic (K/D), ADX, EMA (9/21)
+- ✅ NaN/Inf rejection
+- ✅ Same calculation code in production and backtesting
 
-## 📈 Market Data Ingestion (Go – Producer)
+## Context Service ✅ COMPLETE
 
-### market-data-ingestion Service
-- ⬜ Service scaffolded
-- ⬜ Fetch quotes from Finnhub API
-- ⬜ Publish `QuoteEvent` to `stock.quotes.realtime`
-- ⬜ Rate limiting enforced (Finnhub free tier: 60/min)
-- ⬜ Retries and error handling implemented
-- ⬜ Structured logging added
-- ⬜ Unit tests for Kafka producer
+- ✅ Regime detection from SPY/sector ETFs
+- ✅ VIX + HY credit spreads via FRED API (free)
+- ✅ Sector relative strength scoring
+- ✅ Publishes every 15 min during market hours
 
-### Validation
-- ⬜ Events visible in Redpanda Console
-- ⬜ Payload matches schema exactly
+## Decision Engine ✅ COMPLETE
 
----
+- ✅ Rule evaluation with consensus gate
+- ✅ Confidence scoring with regime multiplier
+- ✅ Trade plan generation (entry, stop, targets, R:R, position sizing)
+- ✅ Pre-trade checklist (5 gates: stop, size, R:R, earnings, regime)
+- ✅ Tier ranking integration (confidence + position size multipliers)
+- ✅ F-tier blacklist suppression
+- ✅ Regime-conditional hard block (BULL-only stocks blocked in non-bull markets)
 
-## 💾 Stock Persistence Service (Consumer)
+## Alert Service ✅ COMPLETE
 
-### Price Data Responsibilities
-- ⬜ Consume `stock.quotes.realtime`
-- ⬜ Write current price snapshot to PostgreSQL (`stocks` table)
-- ⬜ Append daily OHLCV to `price_data_daily`
-- ⬜ Cache current price in Redis with TTL
+- ✅ Telegram integration with formatted trade plans
+- ✅ Pre-trade checklist display
+- ✅ Inline feedback buttons (Traded/Skipped)
+- ✅ Tier badge in header (e.g., `BUY Signal: WPM [A-tier]`)
+- ✅ Regime-conditional warning display
 
-### Engineering
-- ⬜ Idempotent writes (safe reprocessing)
-- ⬜ Consumer group configured correctly
-- ⬜ Graceful shutdown handling
-- ⬜ Unit tests for persistence logic
+## Trade Journal ✅ COMPLETE
+
+- ✅ Consumes trading.orders
+- ✅ Risk metrics at entry (regime + indicators snapshot)
+- ✅ P&L tracking with fees
+
+## Backtesting ✅ COMPLETE
+
+- ✅ Multi-TF hybrid (daily entries + 5-min exits)
+- ✅ 4-gate validation (walk-forward, bootstrap, Monte Carlo, regime)
+- ✅ 103 symbols validated with tier rankings (S-F)
+- ✅ populate_tiers.py bulk uploads to stock-service
 
 ---
 
-## 📊 Analytics Service (High ROI)
+## Remaining Work
 
-### Real-Time Indicators
-- ⬜ Consume `stock.quotes.realtime`
-- ⬜ Calculate RSI, SMA, MACD, Bollinger Bands
-- ⬜ Publish `IndicatorEvent` to `stock.indicators`
-- ⬜ Persist indicators to `technical_indicators` table
+See `CODEBASE_ASSESSMENT.md` "Next Steps" and `QUANT_AUDIT.md` "Tier 2 Recommendations" for current priorities:
 
-### Quality Controls
-- ⬜ Minimum data window checks
-- ⬜ Timeframe clearly defined per indicator
-- ⬜ No lookahead bias
-
----
-
-## 🚨 Alert Service
-
-### Core Logic
-- ⬜ Consume `stock.quotes.realtime`
-- ⬜ Consume `stock.indicators`
-- ⬜ Load `alert_rules` from PostgreSQL
-- ⬜ Evaluate multi-condition rules
-- ⬜ Enforce cooldowns
-
-### Notifications
-- ⬜ Telegram integration working
-- ⬜ Message templates standardized
-- ⬜ Alerts logged to `alert_history`
-
----
-
-## 🤖 Trade Automation & Journaling
-
-### Robinhood Sync
-- ✅ Poll Robinhood API (every 10 minutes during market hours)
-- ✅ Detect filled orders
-- ✅ Publish `TradeEvent` to `trading.orders`
-- ✅ Deduplicate via Redis
-
-### Stock-Service Trade Processing
-- ✅ Consume `trading.orders`
-- ✅ Insert raw trades into `raw_trades` table
-- ✅ Deduplicate by (order_id, source)
-- ✅ Aggregate into positions (weighted avg price)
-- ✅ Close positions on SELL and move to `trades_history`
-
-### Trade Journal Service
-- ⬜ Consume `trading.orders` (separate service)
-- ⬜ Send Telegram journal prompts
-- ⬜ Capture replies and update trade records
-- ⬜ Voice note support (Whisper transcription)
-
----
-
-## 📊 Portfolio & Review
-
-### Portfolio Tracker
-- ⬜ FastAPI service scaffolded
-- ⬜ Read-only endpoints from PostgreSQL
-- ⬜ Live prices from Redis
-
-### Performance Review
-- ⬜ Win rate calculation
-- ⬜ Avg win / avg loss
-- ⬜ Holding time analysis
-- ⬜ Alert effectiveness metrics
-
----
-
-## 🔁 Backtesting & Iteration
-
-- ⬜ Event replay from Kafka topics
-- ⬜ Strategy rules extracted into reusable logic
-- ⬜ Backtest results stored and compared
-- ⬜ Parameters tuned with data, not intuition
-
----
-
-## 🧠 Discipline Layer (Trader Rules)
-
-Before every trade, the system should capture:
-
-- ⬜ Entry reason logged
-- ⬜ Stop loss defined
-- ⬜ Profit target defined
-- ⬜ Risk % of account calculated
-- ⬜ Strategy tag assigned
-
-After every trade:
-
-- ⬜ Exit reason logged
-- ⬜ What went right
-- ⬜ What went wrong
-- ⬜ Trade graded (A–F)
-
----
-
-## 🏁 Definition of Success
-
-This project is succeeding if:
-- 🟡 Trades are explainable (raw trades captured, positions tracked)
-- ⬜ Rules are followed more often than overridden
-- ⬜ Alerts arrive before decisions are emotional
-- ⬜ Journals are filled automatically
-- ⬜ Strategy changes are data-backed
-
-If a feature does not improve decision quality, it is optional.
-
----
-
-## 📋 Current Data Flow (Working)
-
-```
-┌──────────────┐
-│  Robinhood   │
-│   Account    │
-└──────┬───────┘
-       │ Poll every 10 min (market hours)
-       ▼
-┌──────────────────────────┐
-│ robinhood-sync (Python)  │
-│ - Fetch filled orders    │
-│ - Dedupe via Redis       │
-│ - Publish to Kafka       │
-└──────────┬───────────────┘
-           │ TRADE_DETECTED event
-           ▼
-┌──────────────────────────┐
-│ Redpanda (Kafka)         │
-│ Topic: trading.orders    │
-└──────────┬───────────────┘
-           │ Consumer
-           ▼
-┌──────────────────────────┐
-│ stock-service (Go)       │
-│ - Consume events         │
-│ - Save to raw_trades     │
-│ - Update positions       │
-│ - Archive to history     │
-└──────────┬───────────────┘
-           │
-           ▼
-┌──────────────────────────┐
-│ PostgreSQL               │
-│ - raw_trades             │
-│ - positions              │
-│ - trades_history         │
-└──────────────────────────┘
-```
-
----
-
-## 🎯 Next Milestones
-
-### Milestone 1: Market Data Pipeline (NEXT)
-Build the price data ingestion system:
-1. ⬜ Create market-data-ingestion service (Go)
-2. ⬜ Integrate Finnhub API
-3. ⬜ Publish to `stock.quotes.realtime`
-4. ⬜ Update stock-service to consume price events
-5. ⬜ Populate `price_data_daily` table
-
-### Milestone 2: Analytics & Indicators
-Calculate technical indicators:
-1. ⬜ Create analytics-service (Python)
-2. ⬜ Calculate RSI, MACD, SMA, Bollinger Bands
-3. ⬜ Publish to `stock.indicators`
-4. ⬜ Persist to `technical_indicators` table
-
-### Milestone 3: Alerts & Notifications
-Never miss a setup:
-1. ⬜ Create alert-service (Go)
-2. ⬜ Telegram bot integration
-3. ⬜ Multi-condition rule evaluation
-4. ⬜ Cooldown management
-
-### Milestone 4: Trade Journaling
-Capture reasoning:
-1. ⬜ Create trade-journal service (Python)
-2. ⬜ Telegram prompts on new trades
-3. ⬜ Reply capture and storage
-4. ⬜ Voice note transcription
-
----
-
-## 📝 Session Log
-
-### Session 1 (January 17, 2026)
-- Built database schema and migrations
-- Created Go market data service (database-centric)
-- Set up Docker Compose
-- Decided on event-driven architecture with Kafka
-
-### Session 2 (January 17-18, 2026)
-- Built robinhood-sync service (Python)
-- Added Kafka consumer to stock-service
-- Created raw_trades table and migration
-- Verified end-to-end flow: Robinhood → Kafka → stock-service → PostgreSQL
-- Position aggregation and trade history working
+- ⬜ Portfolio-level risk limit (max 6-8% total portfolio heat)
+- ⬜ Sector concentration limit (max 2 concurrent in same sector)
+- ⬜ Drawdown circuit breaker (reduce sizing after 10% drawdown)
+- ⬜ Setup Scanner (daily scan, "Next 3 Setups" queue)
+- ⬜ Daily performance summaries via Telegram
 
 ---
 

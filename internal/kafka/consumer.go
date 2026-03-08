@@ -31,14 +31,13 @@ type Consumer struct {
 // NewConsumer creates a new Kafka consumer for trade events
 func NewConsumer(brokers []string, topic, groupID string, repo RawTradeRepository) *Consumer {
 	reader := kafka.NewReader(kafka.ReaderConfig{
-		Brokers:        brokers,
-		Topic:          topic,
-		GroupID:        groupID,
-		MinBytes:       10e3, // 10KB
-		MaxBytes:       10e6, // 10MB
-		MaxWait:        1 * time.Second,
-		StartOffset:    kafka.FirstOffset,
-		CommitInterval: time.Second,
+		Brokers:     brokers,
+		Topic:       topic,
+		GroupID:     groupID,
+		MinBytes:    10e3, // 10KB
+		MaxBytes:    10e6, // 10MB
+		MaxWait:     1 * time.Second,
+		StartOffset: kafka.FirstOffset,
 	})
 
 	return &Consumer{
@@ -57,7 +56,7 @@ func (c *Consumer) Start(ctx context.Context) error {
 			log.Println("Kafka consumer shutting down...")
 			return c.reader.Close()
 		default:
-			msg, err := c.reader.ReadMessage(ctx)
+			msg, err := c.reader.FetchMessage(ctx)
 			if err != nil {
 				if ctx.Err() != nil {
 					return nil // Context cancelled, normal shutdown
@@ -68,7 +67,12 @@ func (c *Consumer) Start(ctx context.Context) error {
 
 			if err := c.processMessage(msg); err != nil {
 				log.Printf("Error processing message: %v", err)
-				// Continue processing other messages
+				// Don't commit — message will be redelivered on restart
+				continue
+			}
+
+			if err := c.reader.CommitMessages(ctx, msg); err != nil {
+				log.Printf("Error committing offset: %v", err)
 			}
 		}
 	}

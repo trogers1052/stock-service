@@ -109,6 +109,9 @@ func main() {
 	handler := api.NewHandler(db, producer, redisClient)
 	router := api.SetupRoutes(handler)
 
+	// Start background accuracy cache writer (writes per-rule accuracy to Redis)
+	go handler.StartAccuracyCacheWriter(ctx)
+
 	// Create HTTP server
 	addr := cfg.Server.Host + ":" + cfg.Server.Port
 	srv := &http.Server{

@@ -19,7 +19,8 @@ type PositionsRepository interface {
 
 // positionsReader is a small interface wrapper around kafka.Reader to enable unit testing.
 type positionsReader interface {
-	ReadMessage(ctx context.Context) (kafka.Message, error)
+	FetchMessage(ctx context.Context) (kafka.Message, error)
+	CommitMessages(ctx context.Context, msgs ...kafka.Message) error
 	Close() error
 	Config() kafka.ReaderConfig
 }
@@ -33,14 +34,13 @@ type PositionsConsumer struct {
 // NewPositionsConsumer creates a new Kafka consumer for position events
 func NewPositionsConsumer(brokers []string, topic, groupID string, repo PositionsRepository) *PositionsConsumer {
 	reader := kafka.NewReader(kafka.ReaderConfig{
-		Brokers:        brokers,
-		Topic:          topic,
-		GroupID:        groupID + "-positions", // Separate consumer group for positions
-		MinBytes:       10e3,                   // 10KB
-		MaxBytes:       10e6,                   // 10MB
-		MaxWait:        1 * time.Second,
-		StartOffset:    kafka.LastOffset, // Only read new messages (not historical)
-		CommitInterval: time.Second,
+		Brokers:     brokers,
+		Topic:       topic,
+		GroupID:     groupID + "-positions", // Separate consumer group for positions
+		MinBytes:    10e3,                   // 10KB
+		MaxBytes:    10e6,                   // 10MB
+		MaxWait:     1 * time.Second,
+		StartOffset: kafka.LastOffset, // Only read new messages (not historical)
 	})
 
 	return &PositionsConsumer{
@@ -59,7 +59,7 @@ func (c *PositionsConsumer) Start(ctx context.Context) error {
 			log.Println("Positions consumer shutting down...")
 			return c.reader.Close()
 		default:
-			msg, err := c.reader.ReadMessage(ctx)
+			msg, err := c.reader.FetchMessage(ctx)
 			if err != nil {
 				if ctx.Err() != nil {
 					return nil // Context cancelled, normal shutdown
@@ -70,7 +70,12 @@ func (c *PositionsConsumer) Start(ctx context.Context) error {
 
 			if err := c.processMessage(msg); err != nil {
 				log.Printf("Error processing positions message: %v", err)
-				// Continue processing other messages
+				// Don't commit — message will be redelivered on restart
+				continue
+			}
+
+			if err := c.reader.CommitMessages(ctx, msg); err != nil {
+				log.Printf("Error committing positions offset: %v", err)
 			}
 		}
 	}

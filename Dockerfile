@@ -1,5 +1,5 @@
 # Build healthcheck binary
-FROM golang:1.23-alpine AS healthcheck-builder
+FROM golang:1.24-alpine AS healthcheck-builder
 
 WORKDIR /build
 COPY cmd/healthcheck/main.go .

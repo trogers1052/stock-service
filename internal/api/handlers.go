@@ -184,10 +184,13 @@ func (h *Handler) HealthCheck(w http.ResponseWriter, r *http.Request) {
 // CreateFeedback handles POST /api/v1/feedback
 func (h *Handler) CreateFeedback(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Symbol     string  `json:"symbol"`
-		Signal     string  `json:"signal"`
-		Action     string  `json:"action"`
-		Confidence float64 `json:"confidence"`
+		Symbol             string   `json:"symbol"`
+		Signal             string   `json:"signal"`
+		Action             string   `json:"action"`
+		Confidence         float64  `json:"confidence"`
+		RulesTriggered     []string `json:"rules_triggered,omitempty"`
+		RegimeID           string   `json:"regime_id,omitempty"`
+		DecisionConfidence float64  `json:"decision_confidence,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -201,11 +204,14 @@ func (h *Handler) CreateFeedback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fb := &models.SignalFeedback{
-		Symbol:            req.Symbol,
-		Signal:            req.Signal,
-		Action:            req.Action,
-		Confidence:        req.Confidence,
-		FeedbackTimestamp: time.Now(),
+		Symbol:             req.Symbol,
+		Signal:             req.Signal,
+		Action:             req.Action,
+		Confidence:         req.Confidence,
+		RulesTriggered:     req.RulesTriggered,
+		RegimeID:           req.RegimeID,
+		DecisionConfidence: req.DecisionConfidence,
+		FeedbackTimestamp:  time.Now(),
 	}
 
 	if err := h.db.CreateSignalFeedback(fb); err != nil {
@@ -213,8 +219,76 @@ func (h *Handler) CreateFeedback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("Feedback stored: %s %s -> %s (confidence=%.2f)", fb.Symbol, fb.Signal, fb.Action, fb.Confidence)
+	log.Printf("Feedback stored: %s %s -> %s (confidence=%.2f, rules=%v, regime=%s)",
+		fb.Symbol, fb.Signal, fb.Action, fb.Confidence, fb.RulesTriggered, fb.RegimeID)
 	respondJSON(w, http.StatusCreated, fb)
+}
+
+// UpdateFeedback handles PUT /api/v1/feedback/{id}
+func (h *Handler) UpdateFeedback(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	idStr := vars["id"]
+	id, err := strconv.Atoi(idStr)
+	if err != nil || id <= 0 {
+		http.Error(w, "invalid feedback id", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		Action string `json:"action"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.Action == "" {
+		http.Error(w, "action is required", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.db.UpdateFeedbackAction(id, req.Action); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Feedback updated: id=%d -> %s", id, req.Action)
+	respondJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+}
+
+// GetRuleAccuracy handles GET /api/v1/feedback/accuracy
+func (h *Handler) GetRuleAccuracy(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+
+	sinceDays := 90
+	if sd := query.Get("since_days"); sd != "" {
+		d, err := strconv.Atoi(sd)
+		if err != nil || d < 1 {
+			http.Error(w, "invalid since_days parameter", http.StatusBadRequest)
+			return
+		}
+		sinceDays = d
+	}
+
+	minSignals := 10
+	if ms := query.Get("min_signals"); ms != "" {
+		m, err := strconv.Atoi(ms)
+		if err != nil || m < 1 {
+			http.Error(w, "invalid min_signals parameter", http.StatusBadRequest)
+			return
+		}
+		minSignals = m
+	}
+
+	accuracy, err := h.db.GetRuleAccuracy(sinceDays, minSignals)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if accuracy == nil {
+		accuracy = []*models.RuleAccuracy{}
+	}
+	respondJSON(w, http.StatusOK, accuracy)
 }
 
 // GetFeedback handles GET /api/v1/feedback
