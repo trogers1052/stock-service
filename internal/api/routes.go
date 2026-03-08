@@ -24,7 +24,10 @@ func SetupRoutes(handler *Handler) *mux.Router {
 	api.HandleFunc("/feedback", handler.GetFeedback).Methods("GET")
 	api.HandleFunc("/feedback/summary", handler.GetFeedbackSummary).Methods("GET")
 	api.HandleFunc("/feedback/accuracy", handler.GetRuleAccuracy).Methods("GET")
+	api.HandleFunc("/feedback/unresolved", handler.GetUnresolvedSignals).Methods("GET")
+	api.HandleFunc("/feedback/outcome-quality", handler.GetRuleOutcomeQuality).Methods("GET")
 	api.HandleFunc("/feedback/{id}", handler.UpdateFeedback).Methods("PUT")
+	api.HandleFunc("/feedback/{id}/outcome", handler.UpdateSignalOutcome).Methods("PUT")
 
 	// Tier ranking routes
 	api.HandleFunc("/tiers", handler.GetAllTiers).Methods("GET")

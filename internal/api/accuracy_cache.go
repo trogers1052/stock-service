@@ -9,11 +9,13 @@ import (
 )
 
 const (
-	accuracyCacheKey      = "feedback:accuracy"
-	accuracyCacheInterval = 15 * time.Minute
-	accuracyCacheTTL      = 30 * time.Minute
-	accuracySinceDays     = 90
-	accuracyMinSignals    = 10
+	accuracyCacheKey          = "feedback:accuracy"
+	outcomeQualityCacheKey    = "feedback:outcome_quality"
+	accuracyCacheInterval     = 15 * time.Minute
+	accuracyCacheTTL          = 30 * time.Minute
+	accuracySinceDays         = 90
+	accuracyMinSignals        = 10
+	outcomeQualityMinSignals  = 5
 )
 
 // accuracyEntry is the per-rule data written to Redis.
@@ -21,6 +23,15 @@ type accuracyEntry struct {
 	TradeRate   float64 `json:"trade_rate"`
 	Multiplier  float64 `json:"multiplier"`
 	SignalCount int     `json:"signal_count"`
+}
+
+// outcomeQualityEntry is the per-rule outcome quality data written to Redis.
+type outcomeQualityEntry struct {
+	WinRate     float64 `json:"win_rate"`
+	Multiplier  float64 `json:"multiplier"`
+	SignalCount int     `json:"signal_count"`
+	WinCount    int     `json:"win_count"`
+	LossCount   int     `json:"loss_count"`
 }
 
 // StartAccuracyCacheWriter runs a background goroutine that periodically computes
@@ -78,4 +89,44 @@ func (h *Handler) writeAccuracyCache(ctx context.Context) {
 	}
 
 	log.Printf("Accuracy cache updated: %d rule-regime entries", len(data))
+
+	// Also compute and cache outcome quality (signal hit rate)
+	h.writeOutcomeQualityCache(ctx)
+}
+
+func (h *Handler) writeOutcomeQualityCache(ctx context.Context) {
+	quality, err := h.db.GetRuleOutcomeQuality(accuracySinceDays, outcomeQualityMinSignals)
+	if err != nil {
+		log.Printf("WARNING: failed to compute rule outcome quality: %v", err)
+		return
+	}
+
+	if len(quality) == 0 {
+		return
+	}
+
+	data := make(map[string]outcomeQualityEntry, len(quality))
+	for _, q := range quality {
+		key := fmt.Sprintf("%s:%s", q.RuleName, q.RegimeID)
+		data[key] = outcomeQualityEntry{
+			WinRate:     q.WinRate,
+			Multiplier:  q.Multiplier,
+			SignalCount: q.SignalCount,
+			WinCount:    q.WinCount,
+			LossCount:   q.LossCount,
+		}
+	}
+
+	jsonBytes, err := json.Marshal(data)
+	if err != nil {
+		log.Printf("WARNING: failed to marshal outcome quality cache: %v", err)
+		return
+	}
+
+	if err := h.redis.Set(ctx, outcomeQualityCacheKey, string(jsonBytes), accuracyCacheTTL); err != nil {
+		log.Printf("WARNING: failed to write outcome quality cache to Redis: %v", err)
+		return
+	}
+
+	log.Printf("Outcome quality cache updated: %d rule-regime entries", len(data))
 }

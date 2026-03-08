@@ -191,6 +191,11 @@ func (h *Handler) CreateFeedback(w http.ResponseWriter, r *http.Request) {
 		RulesTriggered     []string `json:"rules_triggered,omitempty"`
 		RegimeID           string   `json:"regime_id,omitempty"`
 		DecisionConfidence float64  `json:"decision_confidence,omitempty"`
+		EntryPrice         float64  `json:"entry_price,omitempty"`
+		StopPrice          float64  `json:"stop_price,omitempty"`
+		Target1            float64  `json:"target_1,omitempty"`
+		Target2            float64  `json:"target_2,omitempty"`
+		ValidUntil         string   `json:"valid_until,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -211,7 +216,18 @@ func (h *Handler) CreateFeedback(w http.ResponseWriter, r *http.Request) {
 		RulesTriggered:     req.RulesTriggered,
 		RegimeID:           req.RegimeID,
 		DecisionConfidence: req.DecisionConfidence,
+		EntryPrice:         req.EntryPrice,
+		StopPrice:          req.StopPrice,
+		Target1:            req.Target1,
+		Target2:            req.Target2,
 		FeedbackTimestamp:  time.Now(),
+	}
+
+	if req.ValidUntil != "" {
+		t, err := time.Parse(time.RFC3339, req.ValidUntil)
+		if err == nil {
+			fb.ValidUntil = &t
+		}
 	}
 
 	if err := h.db.CreateSignalFeedback(fb); err != nil {
@@ -219,8 +235,9 @@ func (h *Handler) CreateFeedback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("Feedback stored: %s %s -> %s (confidence=%.2f, rules=%v, regime=%s)",
-		fb.Symbol, fb.Signal, fb.Action, fb.Confidence, fb.RulesTriggered, fb.RegimeID)
+	log.Printf("Feedback stored: %s %s -> %s (confidence=%.2f, entry=%.2f, stop=%.2f, rules=%v, regime=%s)",
+		fb.Symbol, fb.Signal, fb.Action, fb.Confidence, fb.EntryPrice, fb.StopPrice,
+		fb.RulesTriggered, fb.RegimeID)
 	respondJSON(w, http.StatusCreated, fb)
 }
 
@@ -252,6 +269,68 @@ func (h *Handler) UpdateFeedback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("Feedback updated: id=%d -> %s", id, req.Action)
+	respondJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+}
+
+// GetUnresolvedSignals handles GET /api/v1/feedback/unresolved
+func (h *Handler) GetUnresolvedSignals(w http.ResponseWriter, r *http.Request) {
+	limit := 100
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		l, err := strconv.Atoi(limitStr)
+		if err != nil || l < 1 {
+			http.Error(w, "invalid limit parameter", http.StatusBadRequest)
+			return
+		}
+		limit = l
+	}
+
+	entries, err := h.db.GetUnresolvedSignals(limit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if entries == nil {
+		entries = []*models.SignalFeedback{}
+	}
+	respondJSON(w, http.StatusOK, entries)
+}
+
+// UpdateSignalOutcome handles PUT /api/v1/feedback/{id}/outcome
+func (h *Handler) UpdateSignalOutcome(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	idStr := vars["id"]
+	id, err := strconv.Atoi(idStr)
+	if err != nil || id <= 0 {
+		http.Error(w, "invalid feedback id", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		Outcome string `json:"outcome"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	validOutcomes := map[string]bool{
+		"TARGET_1_HIT": true,
+		"TARGET_2_HIT": true,
+		"STOPPED_OUT":  true,
+		"EXPIRED":      true,
+	}
+	if !validOutcomes[req.Outcome] {
+		http.Error(w, "outcome must be one of: TARGET_1_HIT, TARGET_2_HIT, STOPPED_OUT, EXPIRED", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.db.UpdateSignalOutcome(id, req.Outcome); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Signal outcome updated: id=%d -> %s", id, req.Outcome)
 	respondJSON(w, http.StatusOK, map[string]string{"status": "updated"})
 }
 
@@ -289,6 +368,42 @@ func (h *Handler) GetRuleAccuracy(w http.ResponseWriter, r *http.Request) {
 		accuracy = []*models.RuleAccuracy{}
 	}
 	respondJSON(w, http.StatusOK, accuracy)
+}
+
+// GetRuleOutcomeQuality handles GET /api/v1/feedback/outcome-quality
+func (h *Handler) GetRuleOutcomeQuality(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+
+	sinceDays := 90
+	if sd := query.Get("since_days"); sd != "" {
+		d, err := strconv.Atoi(sd)
+		if err != nil || d < 1 {
+			http.Error(w, "invalid since_days parameter", http.StatusBadRequest)
+			return
+		}
+		sinceDays = d
+	}
+
+	minSignals := 5
+	if ms := query.Get("min_signals"); ms != "" {
+		m, err := strconv.Atoi(ms)
+		if err != nil || m < 1 {
+			http.Error(w, "invalid min_signals parameter", http.StatusBadRequest)
+			return
+		}
+		minSignals = m
+	}
+
+	quality, err := h.db.GetRuleOutcomeQuality(sinceDays, minSignals)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if quality == nil {
+		quality = []*models.RuleOutcomeQuality{}
+	}
+	respondJSON(w, http.StatusOK, quality)
 }
 
 // GetFeedback handles GET /api/v1/feedback

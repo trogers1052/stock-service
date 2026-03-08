@@ -232,6 +232,9 @@ func TestSetupRoutes_AllRoutesRegistered(t *testing.T) {
 		{"POST", "/api/v1/feedback"},
 		{"GET", "/api/v1/feedback"},
 		{"GET", "/api/v1/feedback/summary"},
+		{"GET", "/api/v1/feedback/unresolved"},
+		{"GET", "/api/v1/feedback/outcome-quality"},
+		{"PUT", "/api/v1/feedback/42/outcome"},
 	}
 
 	for _, tc := range routes {
@@ -242,6 +245,152 @@ func TestSetupRoutes_AllRoutesRegistered(t *testing.T) {
 				"route not registered: %s %s", tc.method, tc.path)
 		})
 	}
+}
+
+// ---------------------------------------------------------------------------
+// GetUnresolvedSignals validation
+// ---------------------------------------------------------------------------
+
+func TestGetUnresolvedSignals_InvalidLimit(t *testing.T) {
+	h := NewHandler(nil, nil, nil)
+	req := httptest.NewRequest("GET", "/api/v1/feedback/unresolved?limit=abc", nil)
+	w := httptest.NewRecorder()
+
+	h.GetUnresolvedSignals(w, req)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "invalid limit")
+}
+
+func TestGetUnresolvedSignals_NegativeLimit(t *testing.T) {
+	h := NewHandler(nil, nil, nil)
+	req := httptest.NewRequest("GET", "/api/v1/feedback/unresolved?limit=-1", nil)
+	w := httptest.NewRecorder()
+
+	h.GetUnresolvedSignals(w, req)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestGetUnresolvedSignals_ZeroLimit(t *testing.T) {
+	h := NewHandler(nil, nil, nil)
+	req := httptest.NewRequest("GET", "/api/v1/feedback/unresolved?limit=0", nil)
+	w := httptest.NewRecorder()
+
+	h.GetUnresolvedSignals(w, req)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+// ---------------------------------------------------------------------------
+// UpdateSignalOutcome validation
+// ---------------------------------------------------------------------------
+
+func TestUpdateSignalOutcome_InvalidJSON(t *testing.T) {
+	h := NewHandler(nil, nil, nil)
+	router := SetupRoutes(h)
+	req := httptest.NewRequest("PUT", "/api/v1/feedback/42/outcome", strings.NewReader("{bad"))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "invalid request body")
+}
+
+func TestUpdateSignalOutcome_InvalidOutcomeValue(t *testing.T) {
+	h := NewHandler(nil, nil, nil)
+	router := SetupRoutes(h)
+	req := httptest.NewRequest("PUT", "/api/v1/feedback/42/outcome",
+		strings.NewReader(`{"outcome":"INVALID"}`))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "outcome must be one of")
+}
+
+func TestUpdateSignalOutcome_EmptyOutcome(t *testing.T) {
+	h := NewHandler(nil, nil, nil)
+	router := SetupRoutes(h)
+	req := httptest.NewRequest("PUT", "/api/v1/feedback/42/outcome",
+		strings.NewReader(`{"outcome":""}`))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestUpdateSignalOutcome_InvalidID(t *testing.T) {
+	h := NewHandler(nil, nil, nil)
+	router := SetupRoutes(h)
+	req := httptest.NewRequest("PUT", "/api/v1/feedback/abc/outcome",
+		strings.NewReader(`{"outcome":"TARGET_1_HIT"}`))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "invalid feedback id")
+}
+
+func TestUpdateSignalOutcome_ZeroID(t *testing.T) {
+	h := NewHandler(nil, nil, nil)
+	router := SetupRoutes(h)
+	req := httptest.NewRequest("PUT", "/api/v1/feedback/0/outcome",
+		strings.NewReader(`{"outcome":"TARGET_1_HIT"}`))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestUpdateSignalOutcome_NegativeID(t *testing.T) {
+	h := NewHandler(nil, nil, nil)
+	router := SetupRoutes(h)
+	req := httptest.NewRequest("PUT", "/api/v1/feedback/-5/outcome",
+		strings.NewReader(`{"outcome":"TARGET_1_HIT"}`))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+// ---------------------------------------------------------------------------
+// GetRuleOutcomeQuality validation
+// ---------------------------------------------------------------------------
+
+func TestGetRuleOutcomeQuality_InvalidSinceDays(t *testing.T) {
+	h := NewHandler(nil, nil, nil)
+	req := httptest.NewRequest("GET", "/api/v1/feedback/outcome-quality?since_days=abc", nil)
+	w := httptest.NewRecorder()
+
+	h.GetRuleOutcomeQuality(w, req)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "invalid since_days")
+}
+
+func TestGetRuleOutcomeQuality_NegativeSinceDays(t *testing.T) {
+	h := NewHandler(nil, nil, nil)
+	req := httptest.NewRequest("GET", "/api/v1/feedback/outcome-quality?since_days=-5", nil)
+	w := httptest.NewRecorder()
+
+	h.GetRuleOutcomeQuality(w, req)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestGetRuleOutcomeQuality_InvalidMinSignals(t *testing.T) {
+	h := NewHandler(nil, nil, nil)
+	req := httptest.NewRequest("GET", "/api/v1/feedback/outcome-quality?min_signals=xyz", nil)
+	w := httptest.NewRecorder()
+
+	h.GetRuleOutcomeQuality(w, req)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "invalid min_signals")
+}
+
+func TestGetRuleOutcomeQuality_NegativeMinSignals(t *testing.T) {
+	h := NewHandler(nil, nil, nil)
+	req := httptest.NewRequest("GET", "/api/v1/feedback/outcome-quality?min_signals=-1", nil)
+	w := httptest.NewRecorder()
+
+	h.GetRuleOutcomeQuality(w, req)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
 func TestSetupRoutes_WrongMethod(t *testing.T) {
