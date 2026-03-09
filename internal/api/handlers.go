@@ -11,6 +11,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/trogers1052/stock-alert-system/internal/database"
 	"github.com/trogers1052/stock-alert-system/internal/kafka"
+	"github.com/trogers1052/stock-alert-system/internal/metrics"
 	"github.com/trogers1052/stock-alert-system/internal/models"
 	"github.com/trogers1052/stock-alert-system/internal/redis"
 )
@@ -230,10 +231,14 @@ func (h *Handler) CreateFeedback(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	dbStart := time.Now()
 	if err := h.db.CreateSignalFeedback(fb); err != nil {
+		metrics.DBWriteErrors.Inc()
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	metrics.DBWriteDuration.Observe(time.Since(dbStart).Seconds())
+	metrics.FeedbackCreated.Inc()
 
 	log.Printf("Feedback stored: %s %s -> %s (confidence=%.2f, entry=%.2f, stop=%.2f, rules=%v, regime=%s)",
 		fb.Symbol, fb.Signal, fb.Action, fb.Confidence, fb.EntryPrice, fb.StopPrice,
@@ -263,10 +268,14 @@ func (h *Handler) UpdateFeedback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	dbStart := time.Now()
 	if err := h.db.UpdateFeedbackAction(id, req.Action); err != nil {
+		metrics.DBWriteErrors.Inc()
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	metrics.DBWriteDuration.Observe(time.Since(dbStart).Seconds())
+	metrics.FeedbackUpdated.Inc()
 
 	log.Printf("Feedback updated: id=%d -> %s", id, req.Action)
 	respondJSON(w, http.StatusOK, map[string]string{"status": "updated"})
@@ -325,10 +334,14 @@ func (h *Handler) UpdateSignalOutcome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	dbStart := time.Now()
 	if err := h.db.UpdateSignalOutcome(id, req.Outcome); err != nil {
+		metrics.DBWriteErrors.Inc()
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	metrics.DBWriteDuration.Observe(time.Since(dbStart).Seconds())
+	metrics.FeedbackUpdated.Inc()
 
 	log.Printf("Signal outcome updated: id=%d -> %s", id, req.Outcome)
 	respondJSON(w, http.StatusOK, map[string]string{"status": "updated"})
@@ -505,10 +518,14 @@ func (h *Handler) UpsertTier(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	dbStart := time.Now()
 	if err := h.db.UpsertBacktestTier(&tier); err != nil {
+		metrics.DBWriteErrors.Inc()
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	metrics.DBWriteDuration.Observe(time.Since(dbStart).Seconds())
+	metrics.TierUpserts.Inc()
 
 	log.Printf("Tier upserted: %s -> %s (score=%.1f)", tier.Symbol, tier.Tier, tier.CompositeScore)
 
@@ -552,10 +569,14 @@ func (h *Handler) BulkUpsertTiers(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
+		dbStart := time.Now()
 		if err := h.db.UpsertBacktestTier(&tiers[i]); err != nil {
+			metrics.DBWriteErrors.Inc()
 			errors = append(errors, tiers[i].Symbol+": "+err.Error())
 			continue
 		}
+		metrics.DBWriteDuration.Observe(time.Since(dbStart).Seconds())
+		metrics.TierUpserts.Inc()
 
 		// Cache in Redis
 		if h.redis != nil {

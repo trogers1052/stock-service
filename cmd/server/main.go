@@ -110,7 +110,7 @@ func main() {
 
 	// Set up HTTP handler and routes
 	handler := api.NewHandler(db, producer, redisClient)
-	router := api.SetupRoutes(handler)
+	router := api.SetupRoutes(handler, cfg.APIKey)
 
 	// Start background accuracy cache writer (writes per-rule accuracy to Redis)
 	go handler.StartAccuracyCacheWriter(ctx)

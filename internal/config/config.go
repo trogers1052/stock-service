@@ -11,6 +11,7 @@ type Config struct {
 	Database DatabaseConfig
 	Kafka    KafkaConfig
 	Redis    RedisConfig
+	APIKey   string
 }
 
 // ServerConfig holds HTTP server configuration
@@ -50,6 +51,7 @@ type RedisConfig struct {
 // Load reads configuration from environment variables
 func Load() *Config {
 	return &Config{
+		APIKey: getEnv("API_KEY", ""),
 		Server: ServerConfig{
 			Port: getEnv("SERVER_PORT", "8081"),
 			Host: getEnv("SERVER_HOST", "0.0.0.0"),

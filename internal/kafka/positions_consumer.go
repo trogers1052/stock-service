@@ -9,6 +9,7 @@ import (
 
 	"github.com/segmentio/kafka-go"
 	"github.com/shopspring/decimal"
+	"github.com/trogers1052/stock-alert-system/internal/metrics"
 	"github.com/trogers1052/stock-alert-system/internal/models"
 )
 
@@ -59,16 +60,21 @@ func (c *PositionsConsumer) Start(ctx context.Context) error {
 			log.Println("Positions consumer shutting down...")
 			return c.reader.Close()
 		default:
+			topic := c.reader.Config().Topic
 			msg, err := c.reader.FetchMessage(ctx)
 			if err != nil {
 				if ctx.Err() != nil {
 					return nil // Context cancelled, normal shutdown
 				}
+				metrics.KafkaConsumerErrors.WithLabelValues(topic).Inc()
 				log.Printf("Error reading positions message: %v", err)
 				continue
 			}
 
+			metrics.KafkaConsumed.WithLabelValues(topic).Inc()
+
 			if err := c.processMessage(msg); err != nil {
+				metrics.KafkaConsumerErrors.WithLabelValues(topic).Inc()
 				log.Printf("Error processing positions message: %v", err)
 				// Don't commit — message will be redelivered on restart
 				continue
@@ -111,9 +117,12 @@ func (c *PositionsConsumer) processMessage(msg kafka.Message) error {
 	}
 
 	// Replace all positions in the database
+	dbStart := time.Now()
 	if err := c.repo.ReplaceAllPositions(positions); err != nil {
+		metrics.DBWriteErrors.Inc()
 		return fmt.Errorf("failed to replace positions: %w", err)
 	}
+	metrics.DBWriteDuration.Observe(time.Since(dbStart).Seconds())
 
 	log.Printf("Positions snapshot applied: %d positions updated", len(positions))
 

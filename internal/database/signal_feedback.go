@@ -10,7 +10,7 @@ import (
 	"github.com/trogers1052/stock-alert-system/internal/models"
 )
 
-// CreateSignalFeedback inserts a new feedback entry.
+// CreateSignalFeedback inserts a new feedback entry (upsert on duplicate).
 func (db *DB) CreateSignalFeedback(fb *models.SignalFeedback) error {
 	query := `
 		INSERT INTO signal_feedback (
@@ -20,6 +20,17 @@ func (db *DB) CreateSignalFeedback(fb *models.SignalFeedback) error {
 			feedback_timestamp, created_at
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+		ON CONFLICT (symbol, signal, feedback_timestamp) DO UPDATE SET
+			action = EXCLUDED.action,
+			confidence = EXCLUDED.confidence,
+			rules_triggered = EXCLUDED.rules_triggered,
+			regime_id = EXCLUDED.regime_id,
+			decision_confidence = EXCLUDED.decision_confidence,
+			entry_price = EXCLUDED.entry_price,
+			stop_price = EXCLUDED.stop_price,
+			target_1 = EXCLUDED.target_1,
+			target_2 = EXCLUDED.target_2,
+			valid_until = EXCLUDED.valid_until
 		RETURNING id, created_at
 	`
 	now := time.Now()

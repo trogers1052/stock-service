@@ -6,6 +6,10 @@ import (
 	"os"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+
+	// Side-effect import: registers all promauto metrics defined in the
+	// metrics package so they appear on the /metrics endpoint.
+	_ "github.com/trogers1052/stock-alert-system/internal/metrics"
 )
 
 func startMetricsServer() {

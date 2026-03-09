@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/segmentio/kafka-go"
+	"github.com/trogers1052/stock-alert-system/internal/metrics"
 )
 
 // StockRepository defines the interface for stock database operations
@@ -86,16 +87,22 @@ func (c *WatchlistConsumer) Start(ctx context.Context) error {
 			log.Println("Watchlist consumer shutting down...")
 			return c.reader.Close()
 		default:
+			topic := c.reader.Config().Topic
 			msg, err := c.reader.FetchMessage(ctx)
 			if err != nil {
 				if ctx.Err() != nil {
 					return nil // Context cancelled, normal shutdown
 				}
+				metrics.KafkaConsumerErrors.WithLabelValues(topic).Inc()
 				log.Printf("Error reading watchlist message: %v", err)
 				continue
 			}
 
+			metrics.KafkaConsumed.WithLabelValues(topic).Inc()
+			metrics.WatchlistEvents.Inc()
+
 			if err := c.processMessage(msg); err != nil {
+				metrics.KafkaConsumerErrors.WithLabelValues(topic).Inc()
 				log.Printf("Error processing watchlist message: %v", err)
 				// Don't commit — message will be redelivered on restart
 				continue
@@ -161,17 +168,21 @@ func (c *WatchlistConsumer) handleWatchlistUpdated(event WatchlistEvent) error {
 			}
 		}
 
+		dbStart := time.Now()
 		if sector != "" || industry != "" {
 			if err := c.repo.UpsertStockWithSector(symbol, name, sector, industry); err != nil {
+				metrics.DBWriteErrors.Inc()
 				log.Printf("Error upserting stock %s: %v", symbol, err)
 				continue
 			}
 		} else {
 			if err := c.repo.UpsertStockBasic(symbol, name); err != nil {
+				metrics.DBWriteErrors.Inc()
 				log.Printf("Error upserting stock %s: %v", symbol, err)
 				continue
 			}
 		}
+		metrics.DBWriteDuration.Observe(time.Since(dbStart).Seconds())
 		log.Printf("Added/updated stock: %s (%s) sector=%s", symbol, name, sector)
 	}
 
@@ -189,15 +200,19 @@ func (c *WatchlistConsumer) handleSymbolAdded(event WatchlistEvent) error {
 	sector := event.Data.Sector
 	industry := event.Data.Industry
 
+	dbStart := time.Now()
 	if sector != "" || industry != "" {
 		if err := c.repo.UpsertStockWithSector(symbol, name, sector, industry); err != nil {
+			metrics.DBWriteErrors.Inc()
 			return fmt.Errorf("failed to upsert stock %s: %w", symbol, err)
 		}
 	} else {
 		if err := c.repo.UpsertStockBasic(symbol, name); err != nil {
+			metrics.DBWriteErrors.Inc()
 			return fmt.Errorf("failed to upsert stock %s: %w", symbol, err)
 		}
 	}
+	metrics.DBWriteDuration.Observe(time.Since(dbStart).Seconds())
 
 	log.Printf("Added/updated stock from watchlist: %s (%s) sector=%s", symbol, name, sector)
 	return nil

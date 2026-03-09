@@ -10,6 +10,7 @@ import (
 
 	"github.com/segmentio/kafka-go"
 	"github.com/shopspring/decimal"
+	"github.com/trogers1052/stock-alert-system/internal/metrics"
 	"github.com/trogers1052/stock-alert-system/internal/models"
 )
 
@@ -56,16 +57,21 @@ func (c *Consumer) Start(ctx context.Context) error {
 			log.Println("Kafka consumer shutting down...")
 			return c.reader.Close()
 		default:
+			topic := c.reader.Config().Topic
 			msg, err := c.reader.FetchMessage(ctx)
 			if err != nil {
 				if ctx.Err() != nil {
 					return nil // Context cancelled, normal shutdown
 				}
+				metrics.KafkaConsumerErrors.WithLabelValues(topic).Inc()
 				log.Printf("Error reading message: %v", err)
 				continue
 			}
 
+			metrics.KafkaConsumed.WithLabelValues(topic).Inc()
+
 			if err := c.processMessage(msg); err != nil {
+				metrics.KafkaConsumerErrors.WithLabelValues(topic).Inc()
 				log.Printf("Error processing message: %v", err)
 				// Don't commit — message will be redelivered on restart
 				continue
@@ -108,9 +114,12 @@ func (c *Consumer) processMessage(msg kafka.Message) error {
 	}
 
 	// Save raw trade to database (audit trail only - positions come from Robinhood snapshots)
+	dbStart := time.Now()
 	if err := c.repo.CreateRawTrade(rawTrade); err != nil {
+		metrics.DBWriteErrors.Inc()
 		return fmt.Errorf("failed to save raw trade: %w", err)
 	}
+	metrics.DBWriteDuration.Observe(time.Since(dbStart).Seconds())
 
 	log.Printf("Raw trade stored: %s %s %s @ %s (order=%s)",
 		rawTrade.Side, rawTrade.Quantity, rawTrade.Symbol, rawTrade.Price, rawTrade.OrderID)

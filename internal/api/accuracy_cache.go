@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"time"
+
+	"github.com/trogers1052/stock-alert-system/internal/metrics"
 )
 
 const (
@@ -60,8 +62,11 @@ func (h *Handler) StartAccuracyCacheWriter(ctx context.Context) {
 }
 
 func (h *Handler) writeAccuracyCache(ctx context.Context) {
+	start := time.Now()
+
 	accuracy, err := h.db.GetRuleAccuracy(accuracySinceDays, accuracyMinSignals)
 	if err != nil {
+		metrics.AccuracyCacheErrors.Inc()
 		log.Printf("WARNING: failed to compute rule accuracy: %v", err)
 		return
 	}
@@ -79,15 +84,18 @@ func (h *Handler) writeAccuracyCache(ctx context.Context) {
 
 	jsonBytes, err := json.Marshal(data)
 	if err != nil {
+		metrics.AccuracyCacheErrors.Inc()
 		log.Printf("WARNING: failed to marshal accuracy cache: %v", err)
 		return
 	}
 
 	if err := h.redis.Set(ctx, accuracyCacheKey, string(jsonBytes), accuracyCacheTTL); err != nil {
+		metrics.AccuracyCacheErrors.Inc()
 		log.Printf("WARNING: failed to write accuracy cache to Redis: %v", err)
 		return
 	}
 
+	metrics.AccuracyCacheDuration.Observe(time.Since(start).Seconds())
 	log.Printf("Accuracy cache updated: %d rule-regime entries", len(data))
 
 	// Also compute and cache outcome quality (signal hit rate)
@@ -95,8 +103,11 @@ func (h *Handler) writeAccuracyCache(ctx context.Context) {
 }
 
 func (h *Handler) writeOutcomeQualityCache(ctx context.Context) {
+	start := time.Now()
+
 	quality, err := h.db.GetRuleOutcomeQuality(accuracySinceDays, outcomeQualityMinSignals)
 	if err != nil {
+		metrics.AccuracyCacheErrors.Inc()
 		log.Printf("WARNING: failed to compute rule outcome quality: %v", err)
 		return
 	}
@@ -119,14 +130,17 @@ func (h *Handler) writeOutcomeQualityCache(ctx context.Context) {
 
 	jsonBytes, err := json.Marshal(data)
 	if err != nil {
+		metrics.AccuracyCacheErrors.Inc()
 		log.Printf("WARNING: failed to marshal outcome quality cache: %v", err)
 		return
 	}
 
 	if err := h.redis.Set(ctx, outcomeQualityCacheKey, string(jsonBytes), accuracyCacheTTL); err != nil {
+		metrics.AccuracyCacheErrors.Inc()
 		log.Printf("WARNING: failed to write outcome quality cache to Redis: %v", err)
 		return
 	}
 
+	metrics.AccuracyCacheDuration.Observe(time.Since(start).Seconds())
 	log.Printf("Outcome quality cache updated: %d rule-regime entries", len(data))
 }

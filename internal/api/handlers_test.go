@@ -218,7 +218,7 @@ func TestGetFeedback_NegativeLimit(t *testing.T) {
 
 func TestSetupRoutes_AllRoutesRegistered(t *testing.T) {
 	h := NewHandler(nil, nil, nil)
-	router := SetupRoutes(h)
+	router := SetupRoutes(h, "")
 
 	routes := []struct {
 		method string
@@ -285,7 +285,7 @@ func TestGetUnresolvedSignals_ZeroLimit(t *testing.T) {
 
 func TestUpdateSignalOutcome_InvalidJSON(t *testing.T) {
 	h := NewHandler(nil, nil, nil)
-	router := SetupRoutes(h)
+	router := SetupRoutes(h, "")
 	req := httptest.NewRequest("PUT", "/api/v1/feedback/42/outcome", strings.NewReader("{bad"))
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -296,7 +296,7 @@ func TestUpdateSignalOutcome_InvalidJSON(t *testing.T) {
 
 func TestUpdateSignalOutcome_InvalidOutcomeValue(t *testing.T) {
 	h := NewHandler(nil, nil, nil)
-	router := SetupRoutes(h)
+	router := SetupRoutes(h, "")
 	req := httptest.NewRequest("PUT", "/api/v1/feedback/42/outcome",
 		strings.NewReader(`{"outcome":"INVALID"}`))
 	w := httptest.NewRecorder()
@@ -308,7 +308,7 @@ func TestUpdateSignalOutcome_InvalidOutcomeValue(t *testing.T) {
 
 func TestUpdateSignalOutcome_EmptyOutcome(t *testing.T) {
 	h := NewHandler(nil, nil, nil)
-	router := SetupRoutes(h)
+	router := SetupRoutes(h, "")
 	req := httptest.NewRequest("PUT", "/api/v1/feedback/42/outcome",
 		strings.NewReader(`{"outcome":""}`))
 	w := httptest.NewRecorder()
@@ -319,7 +319,7 @@ func TestUpdateSignalOutcome_EmptyOutcome(t *testing.T) {
 
 func TestUpdateSignalOutcome_InvalidID(t *testing.T) {
 	h := NewHandler(nil, nil, nil)
-	router := SetupRoutes(h)
+	router := SetupRoutes(h, "")
 	req := httptest.NewRequest("PUT", "/api/v1/feedback/abc/outcome",
 		strings.NewReader(`{"outcome":"TARGET_1_HIT"}`))
 	w := httptest.NewRecorder()
@@ -331,7 +331,7 @@ func TestUpdateSignalOutcome_InvalidID(t *testing.T) {
 
 func TestUpdateSignalOutcome_ZeroID(t *testing.T) {
 	h := NewHandler(nil, nil, nil)
-	router := SetupRoutes(h)
+	router := SetupRoutes(h, "")
 	req := httptest.NewRequest("PUT", "/api/v1/feedback/0/outcome",
 		strings.NewReader(`{"outcome":"TARGET_1_HIT"}`))
 	w := httptest.NewRecorder()
@@ -342,7 +342,7 @@ func TestUpdateSignalOutcome_ZeroID(t *testing.T) {
 
 func TestUpdateSignalOutcome_NegativeID(t *testing.T) {
 	h := NewHandler(nil, nil, nil)
-	router := SetupRoutes(h)
+	router := SetupRoutes(h, "")
 	req := httptest.NewRequest("PUT", "/api/v1/feedback/-5/outcome",
 		strings.NewReader(`{"outcome":"TARGET_1_HIT"}`))
 	w := httptest.NewRecorder()
@@ -395,7 +395,7 @@ func TestGetRuleOutcomeQuality_NegativeMinSignals(t *testing.T) {
 
 func TestSetupRoutes_WrongMethod(t *testing.T) {
 	h := NewHandler(nil, nil, nil)
-	router := SetupRoutes(h)
+	router := SetupRoutes(h, "")
 
 	// POST to /health should not match (only GET)
 	req := httptest.NewRequest("POST", "/health", nil)

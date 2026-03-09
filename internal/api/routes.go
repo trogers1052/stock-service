@@ -5,14 +5,21 @@ import (
 )
 
 // SetupRoutes configures all API routes
-func SetupRoutes(handler *Handler) *mux.Router {
+func SetupRoutes(handler *Handler, apiKey string) *mux.Router {
 	r := mux.NewRouter()
 
-	// Health check
+	// Global Prometheus metrics middleware — must be registered on the
+	// top-level router so it captures every request including /health.
+	r.Use(PrometheusMiddleware)
+
+	// Health check (unauthenticated)
 	r.HandleFunc("/health", handler.HealthCheck).Methods("GET")
 
-	// Stock routes
+	// API routes (authenticated when API_KEY is set)
 	api := r.PathPrefix("/api/v1").Subrouter()
+	api.Use(APIKeyAuth(apiKey))
+
+	// Stock routes
 	api.HandleFunc("/stocks", handler.GetAllStocks).Methods("GET")
 	api.HandleFunc("/stocks", handler.AddStock).Methods("POST")
 	api.HandleFunc("/stocks/sectors", handler.GetSectors).Methods("GET")
